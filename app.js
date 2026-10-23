@@ -2,11 +2,28 @@
   'use strict';
 
   // ---------- データ ----------
-  const ALL = [];
-  CATEGORIES.forEach(c => [c.words, c.more || []].forEach((list, level) => list.forEach(([w, ja, emoji, kana, ex, exJa, color]) => {
-    ALL.push({ w, ja, emoji, kana, ex, exJa, color, cat: c.id, level });
-  })));
-  const CAT = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
+  // レベル。小学生だけ カタカナの読みかたつき（中学生から上は [英単語, いみ, 絵文字, 例文, 例文のいみ]）
+  const LEVELS = [
+    { id: 'es', name: '小学生', icon: '🎒', cats: CATEGORIES, perLesson: 3 },
+    { id: 'jhs', name: '中学生', icon: '📘', cats: LEVEL_WORDS.jhs, perLesson: 4 },
+    { id: 'hs', name: '高校生', icon: '📗', cats: LEVEL_WORDS.hs, perLesson: 4 },
+    { id: 'univ', name: '大学生', icon: '🎓', cats: LEVEL_WORDS.univ, perLesson: 4 },
+  ];
+  const WORDS = [];
+  LEVELS.forEach(L => L.cats.forEach(c => [c.words, c.more || []].forEach((list, level) => list.forEach(r => {
+    const [w, ja, emoji, kana, ex, exJa, color] = L.id === 'es' ? r : [r[0], r[1], r[2], '', r[3], r[4]];
+    WORDS.push({ w, ja, emoji, kana, ex, exJa, color, cat: c.id, level, lv: L.id });
+  }))));
+  const CAT = Object.fromEntries(LEVELS.flatMap(L => L.cats).map(c => [c.id, c]));
+
+  // いま えらんでいるレベルの ことば（ALL）と なかま（CATS）
+  let LV, ALL, CATS;
+  function setLevel(id) {
+    LV = LEVELS.find(L => L.id === id) || LEVELS[0];
+    ALL = WORDS.filter(x => x.lv === LV.id);
+    CATS = LV.cats;
+  }
+  const freshCount = due => due >= 6 ? LV.perLesson - 1 : LV.perLesson;
 
   // ふくしゅうの間かく（日）。box が上がるほど、次に出るのがあとになる
   const INTERVALS = [0, 1, 3, 7, 14, 30];
@@ -15,8 +32,9 @@
   const KEY = 'eitango-tomodachi-v1';
 
   // ---------- 保存 ----------
-  const DEFAULT_SETTINGS = { slow: false, kana: true, sfx: true };
+  const DEFAULT_SETTINGS = { slow: false, kana: true, sfx: true, level: 'es' };
   let S = load();
+  setLevel(S.settings.level);
   function load() {
     let s = null;
     try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* 保存できない環境でも動かす */ }
@@ -49,6 +67,10 @@
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const pick = a => a[Math.floor(Math.random() * a.length)];
+  // 長い単語は 文字を小さくする（' long' / ' xlong'）
+  const lenClass = (w, long, xlong) => w.length >= xlong ? ' xlong' : w.length >= long ? ' long' : '';
+  // 4つの選択肢は いちばん長い単語に 文字の大きさを そろえる
+  const choiceSize = opts => lenClass(opts.reduce((a, o) => o.w.length > a.length ? o.w : a, ''), 9, 12);
   const wordRe = w => new RegExp('\\b(' + w + ')\\b', 'i');
 
   // 例文のなかの単語に印をつける / 空らんにする
@@ -147,9 +169,9 @@
   let confirmReset = false;
   function renderHome() {
     const due = dueWords().length;
-    const fresh = Math.min(newWords().length, due >= 6 ? 2 : 3);
+    const fresh = Math.min(newWords().length, freshCount(due));
     const learned = ALL.filter(x => isLearned(x.w)).length;
-    const seen = Object.keys(S.words).length;
+    const seen = ALL.filter(x => rec(x.w)).length;
     const doneToday = S.lastDay === today();
     const greet = doneToday ? 'きょうも がんばったね！' : (seen ? 'きょうも いっしょに おぼえよう！' : 'はじめまして！ いっしょに 英語を おぼえよう');
 
@@ -161,7 +183,11 @@
     $('#screen-home').innerHTML = `
       <div class="hello">
         <div class="hello-face" aria-hidden="true">${doneToday ? '😄' : '🦉'}</div>
-        <div><h1>${greet}</h1><p>${ALL.length}この まいにち つかう ことば</p></div>
+        <div><h1>${greet}</h1><p>${LV.name}レベル・${ALL.length}この ことば</p></div>
+      </div>
+      <div class="level-pick" role="radiogroup" aria-label="レベル">
+        ${LEVELS.map(L => `<button class="level-btn" role="radio" aria-checked="${L.id === LV.id}" data-lv="${L.id}" type="button">
+          <span class="lv-icon" aria-hidden="true">${L.icon}</span><span>${L.name}</span><small>${WORDS.filter(x => x.lv === L.id).length}語</small></button>`).join('')}
       </div>
       <div class="stats">
         <div class="stat"><b>${streakNow()}</b><span>🔥 れんぞく日</span></div>
@@ -197,9 +223,12 @@
       </section>
       ${canSpeak ? '' : '<p class="kana">※ この ブラウザでは 英語の 音声が ながれません。Chrome や Safari で ひらいてね。</p>'}
     `;
+    document.querySelectorAll('[data-lv]').forEach(b => {
+      b.onclick = () => { S.settings.level = b.dataset.lv; save(); setLevel(S.settings.level); sfx.tap(); renderHome(); };
+    });
     $('#go-lesson').onclick = startLesson;
     $('#go-games').onclick = renderGames;
-    $('#go-zukan').onclick = () => renderZukan('greet');
+    $('#go-zukan').onclick = () => renderZukan(CATS[0].id);
     $('#go-stickers').onclick = renderStickers;
     $('#set-kana').onchange = e => { S.settings.kana = e.target.checked; save(); };
     $('#set-slow').onchange = e => { S.settings.slow = e.target.checked; save(); };
@@ -242,7 +271,7 @@
 
   function startLesson() {
     const due = dueWords().slice(0, 6);
-    const fresh = newWords().slice(0, due.length >= 6 ? 2 : 3);
+    const fresh = newWords().slice(0, freshCount(due.length));
     let review = due;
     if (!due.length && !fresh.length) review = shuffle(ALL).slice(0, 6);
     const steps = fresh.map(x => ({ type: 'card', x }));
@@ -318,7 +347,7 @@
   const retryNote = step => (step.tries || 0) < 2 ? 'あとで もういちど でるよ' : 'つぎは できるよ！';
   const answerLine = x => `<span class="en">${esc(x.w)}</span> ＝ ${esc(x.ja)} ${x.emoji}`;
 
-  function kanaHtml(x) { return S.settings.kana ? `<div class="kana">よみかた：${esc(x.kana)}</div>` : ''; }
+  function kanaHtml(x) { return S.settings.kana && x.kana ? `<div class="kana">よみかた：${esc(x.kana)}</div>` : ''; }
   function visual(x) {
     return x.color ? `<div class="swatch" style="background:${x.color}" aria-label="${esc(x.ja)}"></div>` : `<div class="emoji" aria-hidden="true">${x.emoji}</div>`;
   }
@@ -329,7 +358,7 @@
       <div class="card">
         ${isNew ? '<span class="new-badge">NEW あたらしい ことば</span>' : ''}
         ${visual(x)}
-        <div class="big-word"><span class="ruled">${esc(x.w)}</span></div>
+        <div class="big-word${lenClass(x.w, 9, 12)}"><span class="ruled">${esc(x.w)}</span></div>
         ${kanaHtml(x)}
         <div class="ja">${esc(x.ja)}</div>
         <div class="btn-row">
@@ -368,7 +397,7 @@
     $('#play-body').innerHTML = `
       <div class="q-label"><span class="q-tag">いみクイズ</span><br>この ことばの いみは どれ？</div>
       <div class="prompt">
-        <div class="big-word"><span class="ruled">${esc(x.w)}</span></div>
+        <div class="big-word${lenClass(x.w, 9, 12)}"><span class="ruled">${esc(x.w)}</span></div>
         <button class="speak" id="q-say" type="button" aria-label="もういちど きく">🔊</button>
       </div>
       <div class="choices" id="choices">
@@ -390,7 +419,7 @@
         <button class="btn" id="q-slow" type="button">🐢 ゆっくり</button>
       </div>
       <div class="choices" id="choices">
-        ${opts.map((o, i) => `<button class="choice en-choice" data-i="${i}" type="button">${esc(o.w)}</button>`).join('')}
+        ${opts.map((o, i) => `<button class="choice en-choice${choiceSize(opts)}" data-i="${i}" type="button">${esc(o.w)}</button>`).join('')}
       </div>`;
     $('#q-say').onclick = () => speak(x.w);
     $('#q-slow').onclick = () => speak(x.w, true);
@@ -430,7 +459,7 @@
         ${visual(x)}
         <div class="ja">${esc(x.ja)}</div>
         <div class="btn-row"><button class="speak" id="q-say" type="button" aria-label="きく">🔊</button></div>
-        <div class="slots${letters.length > 7 ? ' long' : ''}"><span class="ruled" id="slots">${letters.map((_, i) => `<span class="slot empty${i === 0 ? ' next' : ''}" data-s="${i}"></span>`).join('')}</span></div>
+        <div class="slots${lenClass(x.w, 8, 12)}"><span class="ruled" id="slots">${letters.map((_, i) => `<span class="slot empty${i === 0 ? ' next' : ''}" data-s="${i}"></span>`).join('')}</span></div>
       </div>
       <div class="tiles" id="tiles">${tiles.map((c, i) => `<button class="tile" data-i="${i}" type="button">${c}</button>`).join('')}</div>
       <div class="btn-row"><button class="btn" id="q-hint" type="button">💡 ヒント</button></div>`;
@@ -496,7 +525,7 @@
         <p class="sentence-ja">${esc(x.exJa)}</p>
       </div>
       <div class="choices" id="choices">
-        ${opts.map((o, i) => `<button class="choice en-choice" data-i="${i}" type="button">${esc(o.w)}</button>`).join('')}
+        ${opts.map((o, i) => `<button class="choice en-choice${choiceSize(opts)}" data-i="${i}" type="button">${esc(o.w)}</button>`).join('')}
       </div>`;
     const box = $('#choices');
     box.querySelectorAll('.choice').forEach(btn => {
@@ -542,7 +571,7 @@
     const face = rate >= 90 ? '🏆' : rate >= 70 ? '🎉' : '💪';
     const title = rate >= 90 ? 'かんぺき！' : rate >= 70 ? 'よくできました！' : 'がんばったね！';
     const rows = Object.entries(P.results).map(([w, ok]) => {
-      const x = ALL.find(y => y.w === w);
+      const x = WORDS.find(y => y.w === w);
       const isNew = P.fresh.includes(w);
       return `<div class="word-row">
         <span class="wr-emoji" aria-hidden="true">${x.emoji}</span>
@@ -553,7 +582,7 @@
     }).join('');
     const stickerMsg = newly.length
       ? `<section class="lesson-card"><h2>🏅 シールを もらったよ！</h2>
-          <div class="stickers" style="width:100%">${newly.map(n => { const x = ALL.find(y => y.w === n.w); return `<div class="sticker got${n.gold ? ' gold' : ''} pop" title="${esc(n.w)}">${x.emoji}</div>`; }).join('')}</div>
+          <div class="stickers" style="width:100%">${newly.map(n => { const x = WORDS.find(y => y.w === n.w); return `<div class="sticker got${n.gold ? ' gold' : ''} pop" title="${esc(n.w)}">${x.emoji}</div>`; }).join('')}</div>
           <p>${newly.map(n => esc(n.w)).join('、')} を ${newly.some(n => n.gold) ? 'マスターしたよ！' : 'おぼえたよ！'}</p></section>`
       : '';
     const nextDue = P.mode === 'lesson' ? '<p class="kana">できた ことばは、わすれかけた ころに また でてくるよ。それで しっかり おぼえられるんだ。</p>' : '';
@@ -588,8 +617,8 @@
   let gameSel = { type: 'meaning', cat: 'all' };
   function renderGames() {
     const cats = [{ id: 'all', name: 'ぜんぶ', icon: '🌈' }].concat(
-      Object.keys(S.words).length >= 4 ? [{ id: 'seen', name: 'であった ことば', icon: '👀' }] : [],
-      CATEGORIES);
+      ALL.filter(x => rec(x.w)).length >= 4 ? [{ id: 'seen', name: 'であった ことば', icon: '👀' }] : [],
+      CATS);
     if (!cats.some(c => c.id === gameSel.cat)) gameSel.cat = 'all';
     $('#screen-games').innerHTML = `
       <div class="section-label">あそびを えらぶ</div>
@@ -614,7 +643,7 @@
   function renderZukan(catId) {
     $('#screen-zukan').innerHTML = `
       <div class="cat-tabs" role="toolbar" aria-label="ことばの なかま">
-        ${CATEGORIES.map(k => `<button class="cat-tab" data-c="${k.id}" aria-pressed="${k.id === catId}" type="button">${k.icon} ${k.name}</button>`).join('')}
+        ${CATS.map(k => `<button class="cat-tab" data-c="${k.id}" aria-pressed="${k.id === catId}" type="button">${k.icon} ${k.name}</button>`).join('')}
       </div>
       <div class="grid">
         ${ALL.filter(x => x.cat === catId).map((x, i, list) => `${x.level && (i === 0 || !list[i - 1].level) ? '<div class="grid-label">ステップ2</div>' : ''}
@@ -632,7 +661,7 @@
   }
 
   function openCard(w) {
-    const x = ALL.find(y => y.w === w);
+    const x = WORDS.find(y => y.w === w);
     const body = $('#modal-body');
     body.innerHTML = cardHtml(x, false);
     bindCard(body, x);
@@ -651,7 +680,7 @@
       <div class="result-hero"><div class="big" aria-hidden="true">🏅</div>
         <h1>${learned} / ${ALL.length} まい</h1>
         <p class="kana">レッスンで 何日か つづけて せいかいすると シールが もらえるよ。<br>もっと つづけると 金の シールに なるよ！</p></div>
-      ${CATEGORIES.map(c => `<section class="sticker-group"><h3>${c.icon} ${c.name}</h3><div class="stickers">
+      ${CATS.map(c => `<section class="sticker-group"><h3>${c.icon} ${c.name}</h3><div class="stickers">
         ${ALL.filter(x => x.cat === c.id).map(({ w, emoji }) => isLearned(w)
           ? `<button class="sticker got${isMaster(w) ? ' gold' : ''}" data-w="${esc(w)}" type="button" aria-label="${esc(w)}">${emoji}</button>`
           : `<div class="sticker" aria-label="まだ"><span class="q">？</span></div>`).join('')}
