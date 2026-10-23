@@ -3,9 +3,9 @@
 
   // ---------- データ ----------
   const ALL = [];
-  CATEGORIES.forEach(c => c.words.forEach(([w, ja, emoji, kana, ex, exJa, color]) => {
-    ALL.push({ w, ja, emoji, kana, ex, exJa, color, cat: c.id });
-  }));
+  CATEGORIES.forEach(c => [c.words, c.more || []].forEach((list, level) => list.forEach(([w, ja, emoji, kana, ex, exJa, color]) => {
+    ALL.push({ w, ja, emoji, kana, ex, exJa, color, cat: c.id, level });
+  })));
   const CAT = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 
   // ふくしゅうの間かく（日）。box が上がるほど、次に出るのがあとになる
@@ -41,7 +41,8 @@
     const t = today();
     return ALL.filter(x => rec(x.w) && rec(x.w).due <= t).sort((a, b) => rec(a.w).due - rec(b.w).due);
   }
-  const newWords = () => ALL.filter(x => !rec(x.w));
+  // きほん（level 0）を ぜんぶ やってから ステップ2（level 1）へ
+  const newWords = () => ALL.filter(x => !rec(x.w)).sort((a, b) => a.level - b.level);
 
   // ---------- 小さな道具 ----------
   const $ = s => document.querySelector(s);
@@ -123,7 +124,7 @@
     out.textContent = '🎤 きいているよ… いってみて！';
     r.onresult = e => {
       const alts = Array.from(e.results[0]).map(a => a.transcript.toLowerCase().trim());
-      const ok = alts.some(a => a.replace(/[^a-z ]/g, '').split(/\s+/).includes(word));
+      const ok = alts.some(a => a.replace(/[^a-z ]/g, '').split(/\s+/).includes(word.toLowerCase()));
       if (ok) { sfx.ok(); out.textContent = '🎉 じょうず！ ちゃんと つたわったよ'; }
       else { out.textContent = '「' + alts[0] + '」に きこえたよ。もういちど！'; }
     };
@@ -419,7 +420,7 @@
   function renderSpell(step) {
     const x = step.x;
     const letters = x.w.split('');
-    const extra = shuffle('abcdefghijklmnopqrstuvwxyz'.split('').filter(c => !letters.includes(c))).slice(0, x.w.length <= 3 ? 2 : 3);
+    const extra = shuffle('abcdefghijklmnopqrstuvwxyz'.split('').filter(c => !x.w.toLowerCase().includes(c))).slice(0, x.w.length <= 3 ? 2 : 3);
     const tiles = shuffle(letters.concat(extra));
     let pos = 0, mistakes = 0, hinted = false;
 
@@ -429,7 +430,7 @@
         ${visual(x)}
         <div class="ja">${esc(x.ja)}</div>
         <div class="btn-row"><button class="speak" id="q-say" type="button" aria-label="きく">🔊</button></div>
-        <div class="slots"><span class="ruled" id="slots">${letters.map((_, i) => `<span class="slot empty${i === 0 ? ' next' : ''}" data-s="${i}"></span>`).join('')}</span></div>
+        <div class="slots${letters.length > 7 ? ' long' : ''}"><span class="ruled" id="slots">${letters.map((_, i) => `<span class="slot empty${i === 0 ? ' next' : ''}" data-s="${i}"></span>`).join('')}</span></div>
       </div>
       <div class="tiles" id="tiles">${tiles.map((c, i) => `<button class="tile" data-i="${i}" type="button">${c}</button>`).join('')}</div>
       <div class="btn-row"><button class="btn" id="q-hint" type="button">💡 ヒント</button></div>`;
@@ -474,8 +475,9 @@
       if ($('#screen-play').hidden) return;
       const k = e.key.toLowerCase();
       if (!/^[a-z]$/.test(k)) return;
-      const t = tileEls.find(b => !b.classList.contains('used') && b.textContent === k && k === letters[pos])
-        || tileEls.find(b => !b.classList.contains('used') && b.textContent === k);
+      // 大文字（Monday など）も、キーボードは小文字のまま打てるように
+      const open = tileEls.filter(b => !b.classList.contains('used') && b.textContent.toLowerCase() === k);
+      const t = open.find(b => b.textContent === letters[pos]) || open[0];
       if (t) tap(t);
     }
     tileEls.forEach(b => { b.onclick = () => tap(b); });
@@ -610,16 +612,16 @@
   // ---------- ずかん ----------
   function statusMark(w) { return isMaster(w) ? '🥇' : isLearned(w) ? '🏅' : rec(w) ? '👀' : ''; }
   function renderZukan(catId) {
-    const c = CAT[catId];
     $('#screen-zukan').innerHTML = `
       <div class="cat-tabs" role="toolbar" aria-label="ことばの なかま">
         ${CATEGORIES.map(k => `<button class="cat-tab" data-c="${k.id}" aria-pressed="${k.id === catId}" type="button">${k.icon} ${k.name}</button>`).join('')}
       </div>
       <div class="grid">
-        ${c.words.map(([w]) => { const x = ALL.find(y => y.w === w); return `<button class="word-tile" data-w="${esc(w)}" type="button">
-          <span class="wt-mark" aria-hidden="true">${statusMark(w)}</span>
+        ${ALL.filter(x => x.cat === catId).map((x, i, list) => `${x.level && (i === 0 || !list[i - 1].level) ? '<div class="grid-label">ステップ2</div>' : ''}
+          <button class="word-tile" data-w="${esc(x.w)}" type="button">
+          <span class="wt-mark" aria-hidden="true">${statusMark(x.w)}</span>
           <span class="wt-emoji" aria-hidden="true">${x.emoji}</span>
-          <span class="wt-word">${esc(w)}</span><span class="wt-ja">${esc(x.ja)}</span></button>`; }).join('')}
+          <span class="wt-word${x.w.length >= 11 ? ' xlong' : x.w.length >= 9 ? ' long' : ''}">${esc(x.w)}</span><span class="wt-ja">${esc(x.ja)}</span></button>`).join('')}
       </div>
       <p class="kana">👀 であった　🏅 おぼえた　🥇 マスター</p>`;
     document.querySelectorAll('#screen-zukan [data-c]').forEach(b => { b.onclick = () => renderZukan(b.dataset.c); });
@@ -650,7 +652,7 @@
         <h1>${learned} / ${ALL.length} まい</h1>
         <p class="kana">レッスンで 何日か つづけて せいかいすると シールが もらえるよ。<br>もっと つづけると 金の シールに なるよ！</p></div>
       ${CATEGORIES.map(c => `<section class="sticker-group"><h3>${c.icon} ${c.name}</h3><div class="stickers">
-        ${c.words.map(([w, , emoji]) => isLearned(w)
+        ${ALL.filter(x => x.cat === c.id).map(({ w, emoji }) => isLearned(w)
           ? `<button class="sticker got${isMaster(w) ? ' gold' : ''}" data-w="${esc(w)}" type="button" aria-label="${esc(w)}">${emoji}</button>`
           : `<div class="sticker" aria-label="まだ"><span class="q">？</span></div>`).join('')}
       </div></section>`).join('')}`;
