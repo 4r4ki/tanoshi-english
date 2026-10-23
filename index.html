@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>えいたんご ともだち</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <button class="bar-home" id="btn-home" type="button" aria-label="ホームにもどる">🏠</button>
+    <div class="bar-title" id="bar-title">えいたんご ともだち</div>
+    <div class="bar-stars" aria-label="あつめたほし"><span aria-hidden="true">⭐</span> <span id="star-count">0</span></div>
+  </header>
+
+  <!-- ホーム -->
+  <main class="screen" id="screen-home"></main>
+
+  <!-- レッスン・ゲーム中 -->
+  <main class="screen" id="screen-play" hidden>
+    <div class="progress" aria-hidden="true"><div class="progress-fill" id="progress-fill"></div></div>
+    <div id="play-body"></div>
+  </main>
+
+  <!-- けっか -->
+  <main class="screen" id="screen-result" hidden></main>
+
+  <!-- ずかん -->
+  <main class="screen" id="screen-zukan" hidden></main>
+
+  <!-- シールちょう -->
+  <main class="screen" id="screen-stickers" hidden></main>
+
+  <!-- あそびをえらぶ -->
+  <main class="screen" id="screen-games" hidden></main>
+</div>
+
+<!-- こたえあわせのバー -->
+<div class="feedback" id="feedback" hidden>
+  <div class="feedback-inner">
+    <div class="feedback-msg" id="feedback-msg"></div>
+    <button class="btn btn-big" id="feedback-next" type="button">つぎへ ▶</button>
+  </div>
+</div>
+
+<!-- カードをひらく -->
+<div class="modal" id="modal" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true">
+    <button class="modal-close" id="modal-close" type="button" aria-label="とじる">✕</button>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<div class="confetti" id="confetti" aria-hidden="true"></div>
+
+<script src="words.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
